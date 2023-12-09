@@ -5,44 +5,45 @@ contract MicrofinanceWithLiquidityPool {
     // Events
     event LoanApplied(address borrower, uint256 amount);
     event LoanRepaid(address borrower, uint256 amount);
-    event LiquidityDeposited(address provider, uint256 amount);
-    event LiquidityWithdrawn(address provider, uint256 amount);
+    event LiquidityDeposited(address provider, uint256 amount,uint256 balance);
+    event LiquidityWithdrawn(address provider, uint256 amount,uint256 balance);
 
-    // Structure to hold borrower details
     struct Borrower {
         uint256 loanAmount;
+        uint256 maxLoanAmount;
         uint256 dueDate;
         bool hasActiveLoan;
         uint256 interestDue;  // Interest to be paid
         uint256 baseInterestRate;  // Base interest rate for the borrower
     }
 
-    // Structure to hold liquidity provider details
     struct LiquidityProvider {
         uint256 balance;
         bool isProvider;
+        uint256 interestRate;
     }
 
-    // Parameters for the microfinance system
-    uint256 public constant initialLoanAmount = 1e15 wei;  // Assuming 1 ether = 1 dollar for simplicity
-    uint256 public constant initialInterestRate = 10; // Initial interest rate of 10%
-    uint256 public constant interestRateIncrease = 5; // 5% increase for default
-    uint256 public constant penaltyAmount = 2e14 ether; // $2 penalty for late repayment
+    uint256 public constant initialLoanAmount = 1e15 wei;  
+    uint256 public constant initialInterestRate = 10; 
+    uint256 public constant interestRateIncrease = 5; 
+    uint256 public constant penaltyAmount = 2e14 wei; 
+     uint256 public constant loanIncreaseAmount = 1e14 wei;
     uint256 public constant loanDuration = 1 days;
 
-    // Mapping from borrower's and provider's addresses to their details
     mapping(address => Borrower) public borrowers;
     mapping(address => LiquidityProvider) public liquidityProviders;
 
-    // Total liquidity available in the pool
     uint256 public totalLiquidity;
 
-    // Function to apply for a loan
-    function applyForLoan() public {
+    function applyForLoan(uint256 amount) public {
         Borrower storage borrower = borrowers[msg.sender];
+        if(borrower.maxLoanAmount == 0) {
+            borrower.maxLoanAmount = initialLoanAmount;
+            }
         require(!borrower.hasActiveLoan, "Active loan already exists");
+        require(amount<= borrower.maxLoanAmount, "loan amount is less than maxLoan Amount");
         require(totalLiquidity >= initialLoanAmount, "Insufficient liquidity");
-
+        
         borrower.loanAmount = initialLoanAmount;
         borrower.dueDate = block.timestamp + loanDuration;
         borrower.hasActiveLoan = true;
@@ -55,7 +56,6 @@ contract MicrofinanceWithLiquidityPool {
         emit LoanApplied(msg.sender, borrower.loanAmount);
     }
 
-    // Function to repay the loan
     function repayLoan() public payable {
         Borrower storage borrower = borrowers[msg.sender];
         require(borrower.hasActiveLoan, "No active loan");
@@ -64,6 +64,7 @@ contract MicrofinanceWithLiquidityPool {
         if (block.timestamp > borrower.dueDate) {
             totalDue += penaltyAmount;
             borrower.baseInterestRate += interestRateIncrease;
+            borrower.maxLoanAmount -= loanIncreaseAmount;
         }
         require(msg.value >= totalDue, "Insufficient amount to repay the loan");
 
@@ -74,7 +75,6 @@ contract MicrofinanceWithLiquidityPool {
         emit LoanRepaid(msg.sender, msg.value);
     }
 
-    // Function to deposit liquidity
     function depositLiquidity() public payable {
         require(msg.value > 0, "Must deposit a positive amount");
 
@@ -85,10 +85,9 @@ contract MicrofinanceWithLiquidityPool {
         liquidityProviders[msg.sender].balance += msg.value;
         totalLiquidity += msg.value;
 
-        emit LiquidityDeposited(msg.sender, msg.value);
+        emit LiquidityDeposited(msg.sender, msg.value,liquidityProviders[msg.sender].balance);
     }
 
-    // Function to withdraw liquidity
     function withdrawLiquidity(uint256 amount) public {
         require(liquidityProviders[msg.sender].isProvider, "Not a liquidity provider");
         require(amount <= liquidityProviders[msg.sender].balance, "Insufficient balance");
@@ -97,11 +96,9 @@ contract MicrofinanceWithLiquidityPool {
         totalLiquidity -= amount;
         payable(msg.sender).transfer(amount);
 
-        emit LiquidityWithdrawn(msg.sender, amount);
+        emit LiquidityWithdrawn(msg.sender, amount,liquidityProviders[msg.sender].balance);
     }
 
-    // Additional functions and logic as needed...
 
-    // Fallback function to handle direct ether transfers
     receive() external payable {}
 }
